@@ -2,6 +2,7 @@ const express = require("express");
 const connectDB = require("./config/db");
 const Listing = require("./models/Listing");
 const Booking = require("./models/Booking");
+const authenticate = require("./authentication/auth");
 require("dotenv").config();
 
 const app = express();
@@ -52,14 +53,14 @@ app.get("/api/listings/:id", async (req, res) => {
     }
 });
 
-app.post("/api/listings/:id/book", async (req, res) => { //book stay
-    const { id } = req.params;
-    const { userId, startDate, endDate } = req.body;
+app.post("/api/listings/:id/book", authenticate, async (req, res) => {
 
-    // Basic validation
-    if (!userId || !startDate || !endDate) {
+    const { id } = req.params;
+    const { startDate, endDate } = req.body;
+
+    if (!startDate || !endDate) {
         return res.status(400).json({
-            error: "Missing userId, startDate, or endDate"
+            error: "Missing startDate or endDate"
         });
     }
 
@@ -79,7 +80,6 @@ app.post("/api/listings/:id/book", async (req, res) => { //book stay
     }
 
     try {
-        // Make sure listing exists
         const listing = await Listing.findById(id);
 
         if (!listing) {
@@ -88,7 +88,6 @@ app.post("/api/listings/:id/book", async (req, res) => { //book stay
             });
         }
 
-        // Check for overlapping bookings
         const overlappingBooking = await Booking.findOne({
             listingId: id,
             status: "confirmed",
@@ -102,12 +101,12 @@ app.post("/api/listings/:id/book", async (req, res) => { //book stay
             });
         }
 
-        // Create booking
         const booking = await Booking.create({
-            userId,
+            userId: req.user.$id,
             listingId: id,
             startDate: start,
-            endDate: end
+            endDate: end,
+            status: "confirmed"
         });
 
         res.status(201).json({
@@ -122,19 +121,20 @@ app.post("/api/listings/:id/book", async (req, res) => { //book stay
             error: "Internal server error"
         });
     }
-});
+}
+);
 
-
-app.get("/api/bookings/:userId", async (req, res) => {
-    const { userId } = req.params;
-
+app.get("/api/bookings", authenticate, async (req, res) => {
     try {
-        const bookings = await Booking.find({ userId })
-            .sort({ createdAt: -1 });
+        const bookings = await Booking.find({
+            userId: req.user.$id
+        }).sort({ createdAt: -1 });
 
         res.json(bookings);
+
     } catch (error) {
         console.error("Error fetching bookings:", error);
+
         res.status(500).json({
             error: "Internal server error"
         });
